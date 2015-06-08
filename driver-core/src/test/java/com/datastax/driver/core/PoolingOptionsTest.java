@@ -17,71 +17,18 @@ package com.datastax.driver.core;
 
 import org.testng.annotations.Test;
 
-import java.util.Collection;
-import java.util.Collections;
-import java.util.concurrent.*;
+import static com.datastax.driver.core.Assertions.assertThat;
+import static com.datastax.driver.core.HostDistance.LOCAL;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Matchers.any;
-import static org.mockito.Mockito.*;
+public class PoolingOptionsTest {
 
-public class PoolingOptionsTest extends CCMBridge.PerClassSingleNodeCluster {
-    @Override
-    protected Collection<String> getTableDefinitions() {
-        return Collections.emptyList();
-    }
+    @Test(groups = "unit")
+    public void should_set_core_and_max_connections_simultaneously() {
+        PoolingOptions options = new PoolingOptions();
 
-    /**
-     * <p>
-     * Validates that if a custom executor is provided via {@link PoolingOptions#setInitializationExecutor} that it
-     * is used to create and tear down connections.
-     * </p>
-     *
-     * @test_category connection:connection_pool
-     * @expected_result executor is used and successfully able to connect and tear down connections.
-     * @jira_ticket JAVA-692
-     * @since 2.0.10, 2.1.6
-     */
-    @Test(groups = "short")
-    public void should_be_able_to_use_custom_initialization_executor() {
-        ThreadPoolExecutor executor = spy(new ThreadPoolExecutor(1, 1, 60, TimeUnit.SECONDS,
-                new LinkedBlockingQueue<Runnable>()));
+        options.setConnectionsPerHost(LOCAL, 10, 15);
 
-        PoolingOptions poolingOptions = new PoolingOptions();
-        poolingOptions.setInitializationExecutor(executor);
-
-        Cluster cluster = Cluster.builder()
-                .addContactPointsWithPorts(Collections.singletonList(hostAddress))
-                .withPoolingOptions(poolingOptions).build();
-        try {
-            cluster.init();
-            // Ensure executor used.
-            verify(executor, atLeastOnce()).execute(any(Runnable.class));
-
-            // Reset invocation count.
-            reset();
-
-            Session session = cluster.connect();
-
-            // Ensure executor used again to establish core connections.
-            verify(executor, atLeastOnce()).execute(any(Runnable.class));
-
-            // Expect core connections + control connection.
-            assertThat(cluster.getMetrics().getOpenConnections().getValue()).isEqualTo(
-                    TestUtils.numberOfLocalCoreConnections(cluster) + 1);
-
-            reset();
-
-            session.close();
-
-            // Executor should have been used to close connections associated with the session.
-            verify(executor, atLeastOnce()).execute(any(Runnable.class));
-
-            // Only the control connection should remain.
-            assertThat(cluster.getMetrics().getOpenConnections().getValue()).isEqualTo(1);
-        } finally {
-            cluster.close();
-            executor.shutdown();
-        }
+        assertThat(options.getCoreConnectionsPerHost(LOCAL)).isEqualTo(10);
+        assertThat(options.getMaxConnectionsPerHost(LOCAL)).isEqualTo(15);
     }
 }

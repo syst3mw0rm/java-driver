@@ -2,6 +2,9 @@
 
 ### 2.0.11 (in progress)
 
+- [improvement] Add PoolingOptions method to set both core and max
+  connections (JAVA-662).
+
 Merged from 2.0.10_fixes branch:
 
 - [improvement] Use Netty's pooled ByteBufAllocator by default (JAVA-756)
