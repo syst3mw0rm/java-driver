@@ -15,10 +15,11 @@
  */
 package com.datastax.driver.core;
 
-import java.net.InetSocketAddress;
 import java.util.*;
 
 import org.testng.annotations.Test;
+
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.testng.Assert.assertEquals;
 
 /**
@@ -135,10 +136,14 @@ public class SchemaTest extends CCMBridge.PerClassSingleNodeCluster {
             assertEquals(stripOptions(metadata.getTable(table).exportAsString(), false), def);
         }
 
-        for (Map.Entry<String, String> tableEntry : compact.entrySet()) {
-            String table = tableEntry.getKey();
-            String def = tableEntry.getValue();
-            assertEquals(stripOptions(metadata.getTable(table).exportAsString(), true), def);
+        VersionNumber version = TestUtils.findHost(cluster, 1).getCassandraVersion();
+
+        if (version.getMajor() < 3) {
+            for (Map.Entry<String, String> tableEntry : compact.entrySet()) {
+                String table = tableEntry.getKey();
+                String def = tableEntry.getValue();
+                assertEquals(stripOptions(metadata.getTable(table).exportAsString(), true), def);
+            }
         }
     }
 
@@ -147,30 +152,66 @@ public class SchemaTest extends CCMBridge.PerClassSingleNodeCluster {
     public void schemaExportOptionsTest() {
         TableMetadata metadata = cluster.getMetadata().getKeyspace(keyspace).getTable("with_options");
 
-        String withOpts = withOptions;
+        String cql = metadata.exportAsString();
+
         VersionNumber version = TestUtils.findHost(cluster, 1).getCassandraVersion();
 
-        if (version.getMajor() == 2) {
-            // Strip the last ';'
-            withOpts = withOpts.substring(0, withOpts.length() - 1) + '\n';
+        if (version.getMajor() > 2) {
+            assertThat(cql)
+                .contains("read_repair_chance = 0.5")
+                .contains("dclocal_read_repair_chance = 0.6")
+                .contains("gc_grace_seconds = 42")
+                .contains("bloom_filter_fp_chance = 0.01")
+                .contains("comment = 'My awesome table'")
+                .contains("'keys' : 'ALL'")
+                .contains("'rows_per_partition' : 'ALL'")
+                .contains("'class' : 'org.apache.cassandra.db.compaction.LeveledCompactionStrategy'")
+                .contains("'sstable_size_in_mb' : 15")
+                .contains("'class' : 'org.apache.cassandra.io.compress.SnappyCompressor'") // sstable_compression becomes class
+                .contains("'chunk_length_in_kb' : 128") // note the "in" prefix
+                .contains("default_time_to_live = 0")
+                .contains("speculative_retry = '99.0PERCENTILE'")
+                .contains("min_index_interval = 128")
+                .contains("max_index_interval = 2048")
+                .doesNotContain("replicate_on_write");
 
-            // With C* 2.x we'll have a few additional options
-            withOpts += "   AND default_time_to_live = 0\n"
-                      + "   AND speculative_retry = '99.0PERCENTILE'\n";
+        } else if (version.getMajor() == 2 && version.getMinor() > 0) {
+            // With 2.1 we have different options, the caching option changes and replicate_on_write disappears
+            assertThat(cql)
+                .contains("read_repair_chance = 0.5")
+                .contains("dclocal_read_repair_chance = 0.6")
+                .contains("gc_grace_seconds = 42")
+                .contains("bloom_filter_fp_chance = 0.01")
+                .contains("comment = 'My awesome table'")
+                .contains("'keys' : 'ALL'")
+                .contains("'rows_per_partition' : 'ALL'")
+                .contains("'class' : 'org.apache.cassandra.db.compaction.LeveledCompactionStrategy'")
+                .contains("'sstable_size_in_mb' : 15")
+                .contains("'sstable_compression' : 'org.apache.cassandra.io.compress.SnappyCompressor'")
+                .contains("'chunk_length_kb' : 128")
+                .contains("default_time_to_live = 0")
+                .contains("speculative_retry = '99.0PERCENTILE'")
+                .contains("min_index_interval = 128")
+                .contains("max_index_interval = 2048")
+                .doesNotContain("replicate_on_write");
 
-            if (version.getMinor() == 0) {
-                // With 2.0 we'll have one more options
-                withOpts += "   AND index_interval = 128;";
-            } else {
-                // With 2.1 we have different options, the caching option changes and replicate_on_write disappears
-                withOpts += "   AND min_index_interval = 128\n"
-                          + "   AND max_index_interval = 2048;";
-
-                withOpts = withOpts.replace("caching = 'ALL'",
-                                            "caching = { 'keys' : 'ALL', 'rows_per_partition' : 'ALL' }")
-                                   .replace("   AND replicate_on_write = true\n", "");
-            }
+        } else {
+            assertThat(cql)
+                .contains("read_repair_chance = 0.5")
+                .contains("dclocal_read_repair_chance = 0.6")
+                .contains("gc_grace_seconds = 42")
+                .contains("bloom_filter_fp_chance = 0.01")
+                .contains("comment = 'My awesome table'")
+                .contains("caching = 'ALL'")
+                .contains("'class' : 'org.apache.cassandra.db.compaction.LeveledCompactionStrategy'")
+                .contains("'sstable_size_in_mb' : 15")
+                .contains("'sstable_compression' : 'org.apache.cassandra.io.compress.SnappyCompressor'")
+                .contains("'chunk_length_kb' : 128")
+                .contains("replicate_on_write = true")
+                .doesNotContain("index_interval")
+                .doesNotContain("speculative_retry")
+                .doesNotContain("default_time_to_live");
         }
-        assertEquals(metadata.exportAsString(), withOpts);
+
     }
 }

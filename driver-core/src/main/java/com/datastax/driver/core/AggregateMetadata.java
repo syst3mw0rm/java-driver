@@ -39,7 +39,7 @@ public class AggregateMetadata {
     private final String stateFuncFullName;
     private final DataType stateType;
 
-    public AggregateMetadata(KeyspaceMetadata keyspace, String fullName, String simpleName, List<DataType> argumentTypes,
+    private AggregateMetadata(KeyspaceMetadata keyspace, String fullName, String simpleName, List<DataType> argumentTypes,
                              String finalFuncSimpleName, String finalFuncFullName, Object initCond, DataType returnType,
                              String stateFuncSimpleName, String stateFuncFullName, DataType stateType) {
         this.keyspace = keyspace;
