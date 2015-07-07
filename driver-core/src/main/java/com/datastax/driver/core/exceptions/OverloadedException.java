@@ -15,6 +15,7 @@
  */
 package com.datastax.driver.core.exceptions;
 
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 
 /**
@@ -24,7 +25,7 @@ import java.net.InetSocketAddress;
  * because the driver would transparently retry the same query on another host;
  * but such exceptions are likely to appear occasionally in the driver logs.
  */
-public class OverloadedException extends DriverInternalError {
+public class OverloadedException extends DriverInternalError implements CoordinatorException {
 
     private static final long serialVersionUID = 0;
 
@@ -41,6 +42,15 @@ public class OverloadedException extends DriverInternalError {
     private OverloadedException(InetSocketAddress address, String message, OverloadedException cause) {
         super(message, cause);
         this.address = address;
+    }
+
+    /**
+     * The host that that reported itself being overloaded.
+     *
+     * @return The host that reported itself being overloaded.
+     */
+    public InetAddress getHost() {
+        return address.getAddress();
     }
 
     /**

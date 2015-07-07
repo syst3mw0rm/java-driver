@@ -15,23 +15,57 @@
  */
 package com.datastax.driver.core.exceptions;
 
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+
 /**
  * Error during a truncation operation.
  */
-public class TruncateException extends QueryExecutionException {
+public class TruncateException extends QueryExecutionException implements CoordinatorException {
 
     private static final long serialVersionUID = 0;
 
+    private final InetSocketAddress address;
+
+    /**
+     * This constructor is kept for backwards compatibility.
+     */
+    @Deprecated
     public TruncateException(String msg) {
-        super(msg);
+        this(null, msg);
     }
 
-    private TruncateException(String msg, Throwable cause) {
+    public TruncateException(InetSocketAddress address, String msg) {
+        super(msg);
+        this.address = address;
+    }
+
+    private TruncateException(InetSocketAddress address, String msg, Throwable cause) {
         super(msg, cause);
+        this.address = address;
+    }
+
+    /**
+     * The coordinator host that caused this exception to be thrown.
+     *
+     * @return The coordinator host that caused this exception to be thrown, or {@code null} if this exception has been generated driver-side.
+     */
+    public InetAddress getHost() {
+        return address.getAddress();
+    }
+
+    /**
+     * The full address of the host that caused this exception to be thrown.
+     *
+     * @return the full address of the host that caused this exception to be thrown,
+     * or {@code null} if this exception has been generated driver-side.
+     */
+    public InetSocketAddress getAddress() {
+        return address;
     }
 
     @Override
     public DriverException copy() {
-        return new TruncateException(getMessage(), this);
+        return new TruncateException(getAddress(), getMessage(), this);
     }
 }

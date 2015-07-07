@@ -15,23 +15,57 @@
  */
 package com.datastax.driver.core.exceptions;
 
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+
 /**
  * Indicates a syntax error in a query.
  */
-public class SyntaxError extends QueryValidationException {
+public class SyntaxError extends QueryValidationException implements CoordinatorException {
 
     private static final long serialVersionUID = 0;
 
+    private final InetSocketAddress address;
+
+    /**
+     * This constructor is kept for backwards compatibility.
+     */
+    @Deprecated
     public SyntaxError(String msg) {
-        super(msg);
+        this(null, msg);
     }
 
-    private SyntaxError(String msg, Throwable cause) {
+    public SyntaxError(InetSocketAddress address, String msg) {
+        super(msg);
+        this.address = address;
+    }
+
+    private SyntaxError(InetSocketAddress address, String msg, Throwable cause) {
         super(msg, cause);
+        this.address = address;
+    }
+
+    /**
+     * The coordinator host that caused this exception to be thrown.
+     *
+     * @return The coordinator host that caused this exception to be thrown, or {@code null} if this exception has been generated driver-side.
+     */
+    public InetAddress getHost() {
+        return address.getAddress();
+    }
+
+    /**
+     * The full address of the host that caused this exception to be thrown.
+     *
+     * @return the full address of the host that caused this exception to be thrown,
+     * or {@code null} if this exception has been generated driver-side.
+     */
+    public InetSocketAddress getAddress() {
+        return address;
     }
 
     @Override
     public DriverException copy() {
-        return new SyntaxError(getMessage(), this);
+        return new SyntaxError(getAddress(), getMessage(), this);
     }
 }
