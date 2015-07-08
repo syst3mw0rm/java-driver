@@ -47,6 +47,7 @@ public class QueryOptions {
     private volatile int fetchSize = DEFAULT_FETCH_SIZE;
     private volatile boolean defaultIdempotence = DEFAULT_IDEMPOTENCE;
     private volatile Cluster.Manager manager;
+    private volatile boolean prepareStatementsOnce = false;
 
     /**
      * Creates a new {@link QueryOptions} instance using the {@link #DEFAULT_CONSISTENCY_LEVEL},
@@ -168,5 +169,33 @@ public class QueryOptions {
      */
     public boolean getDefaultIdempotence() {
         return defaultIdempotence;
+    }
+
+    /**
+     * Set whether {@link SessionManager#prepare} should prepare statements once or on all the nodes in the cluster.
+     *
+     * Setting this option to true is useful if you have many clients and many nodes and
+     * each client prepares the same statement at startup, in this case re-preparing each
+     * time on all nodes can be redundant.
+     *
+     * @param prepareStatementsOnce the new value to set to indicate whether to prepare
+     *                              statements once or on all nodes.
+     * @return this {@code QueryOptions} instance.
+     */
+    public QueryOptions setPrepareStatementsOnce(boolean prepareStatementsOnce) {
+        this.prepareStatementsOnce = prepareStatementsOnce;
+        return this;
+    }
+
+    /**
+     * The value to indicate if statements are prepared once or on all nodes.
+     * <p/>
+     * The default behaviour is to prepare on all nodes (value is false).
+     *
+     * @return the value which indicates whether statements are prepared once
+     *         or on all nodes.
+     */
+    public boolean getPrepareStatementsOnce() {
+        return this.prepareStatementsOnce;
     }
 }
