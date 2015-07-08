@@ -22,6 +22,7 @@
 - [bug] Preserve tracing across retries (JAVA-815)
 - [improvement] New RetryDecision.tryNextHost() (JAVA-709)
 - [bug] Handle function calls and raw strings as non-idempotent in QueryBuilder (JAVA-733)
+- [new feature] Make it possible to register for SchemaChange Events (JAVA-151)
 
 Merged from 2.0.10_fixes branch:
 
