@@ -558,6 +558,10 @@ class ControlConnection implements Host.StateListener {
             allTokens.add(row.getSet("tokens", String.class));
         }
 
+        // shuffle the list of found hosts to
+        // spread the load evenly
+        Collections.shuffle(foundHosts);
+
         for (int i = 0; i < foundHosts.size(); i++) {
             Host host = cluster.metadata.getHost(foundHosts.get(i));
             boolean isNew = false;
