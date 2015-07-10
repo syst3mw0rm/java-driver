@@ -46,6 +46,7 @@ public class QueryOptions {
     private volatile ConsistencyLevel serialConsistency = DEFAULT_SERIAL_CONSISTENCY_LEVEL;
     private volatile int fetchSize = DEFAULT_FETCH_SIZE;
     private volatile boolean defaultIdempotence = DEFAULT_IDEMPOTENCE;
+    private volatile boolean reprepareOnUp = true;
     private volatile Cluster.Manager manager;
 
     /**
@@ -168,5 +169,32 @@ public class QueryOptions {
      */
     public boolean getDefaultIdempotence() {
         return defaultIdempotence;
+    }
+
+    /**
+     * Set whether the driver should re-prepare all cached prepared statements when
+     * it receives an onUp notification from the coordinator.
+     *
+     * If the node had a temporary network issue and had not completely crashed, then it
+     * is useless to re-prepare all queries on it.
+     *
+     * @jira_ticket JAVA-658
+     * @param reprepareOnUp the boolean indicating whether the driver should re-prepare all
+     *                      cached queries when it receives a onUp notification.
+     * @return this {@code QueryOptions} instance.
+     */
+    public QueryOptions setReprepareOnUp(boolean reprepareOnUp){
+        this.reprepareOnUp = reprepareOnUp;
+        return this;
+    }
+
+    /**
+     * The value indicating whether the driver should re-prepare queries on an onUp
+     * notification from the coordinator.
+     *
+     * @return the value for re-preparing the statements.
+     */
+    public boolean isReprepareOnUp() {
+        return this.reprepareOnUp;
     }
 }
