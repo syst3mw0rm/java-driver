@@ -1227,6 +1227,10 @@ public class Cluster implements Closeable {
 
         // pending requests to be coalesced / executed
         private final BlockingQueue<SchemaRefreshRequest> schemaRefreshRequests = new LinkedBlockingQueue<SchemaRefreshRequest>();
+        // Cassandra tends to send notifications for new/up nodes a bit early (it is triggered once
+        // gossip is up, but that is before the client-side server is up), so we add a delay
+        // (otherwise the connection will likely fail and have to be retry which is wasteful). This
+        // probably should be fixed C* side, after which we'll be able to remove this.
         private final BlockingQueue<NodeRefreshRequest> nodeRefreshRequests = new DelayQueue<NodeRefreshRequest>();
 
         // locks used to flush enqueued requests
@@ -2051,8 +2055,8 @@ public class Cluster implements Closeable {
         }
 
         void submitSchemaRefresh(String keyspace, String table) {
-            logger.trace("Submitting schema refresh (ks {}, table {})", keyspace, table);
             SchemaRefreshRequest request = new SchemaRefreshRequest(keyspace, table);
+            logger.trace("Submitting {}", request);
             schemaRefreshLock.readLock().lock();
             try {
                 schemaRefreshRequests.add(request);
@@ -2070,9 +2074,9 @@ public class Cluster implements Closeable {
             }
         }
 
-        private void submitNodeRefresh(Host host, Host.State state, boolean delay) {
-            logger.trace("Submitting node refresh (host {}, state {})", host, state);
-            NodeRefreshRequest request = new NodeRefreshRequest(host, state, delay);
+        private void submitNodeRefresh(Host host, HostEvent eventType) {
+            NodeRefreshRequest request = new NodeRefreshRequest(host, eventType);
+            logger.trace("Submitting {}", request);
             nodeRefreshLock.readLock().lock();
             try {
                 nodeRefreshRequests.add(request);
@@ -2130,22 +2134,28 @@ public class Cluster implements Closeable {
                 int drained = nodeRefreshRequests.drainTo(requests);
                 if (!requests.isEmpty()) {
                     logger.trace("Flushing {} node refresh requests", requests.size());
-                    Map<Host, Host.State> hosts = new HashMap<Host, Host.State>();
+                    Map<Host, HostEvent> hosts = new HashMap<Host, HostEvent>();
                     for (NodeRefreshRequest req : requests) {
-                        hosts.put(req.host, req.state);
+                        hosts.put(req.host, req.eventType);
                     }
-                    for (final Entry<Host, Host.State> entry : hosts.entrySet()) {
+                    for (final Entry<Host, HostEvent> entry : hosts.entrySet()) {
                         // Make sure we have up-to-date infos on that host before adding it (so we typically
                         // catch that an upgraded node uses a new cassandra version).
                         Host host = entry.getKey();
-                        Host.State state = entry.getValue();
+                        HostEvent eventType = entry.getValue();
                         if (controlConnection.refreshNodeInfo(host)) {
-                            switch (state) {
+                            switch (eventType) {
                                 case UP:
                                     onUp(host, null);
                                     break;
                                 case ADDED:
                                     onAdd(host, null);
+                                    break;
+                                case DOWN:
+                                    triggerOnDown(host, true);
+                                    break;
+                                case REMOVED:
+                                    removeHost(host, false);
                                     break;
                             }
                         } else {
@@ -2227,16 +2237,13 @@ public class Cluster implements Closeable {
                     switch (tpc.change) {
                         case NEW_NODE:
                             final Host newHost = metadata.add(tpAddr);
-                            if (newHost != null) {
-                                // Cassandra tends to send notifications for new/up nodes a bit early (it is triggered once
-                                // gossip is up, but that is before the client-side server is up), so we add a delay
-                                // (otherwise the connection will likely fail and have to be retry which is wasteful). This
-                                // probably should be fixed C* side, after which we'll be able to remove this.
-                                submitNodeRefresh(newHost, Host.State.ADDED, true);
-                            }
+                            if (newHost != null)
+                                submitNodeRefresh(newHost, HostEvent.ADDED);
                             break;
                         case REMOVED_NODE:
-                            removeHost(metadata.getHost(tpAddr), false);
+                            Host removedHost = metadata.getHost(tpAddr);
+                            if(removedHost != null)
+                                submitNodeRefresh(removedHost, HostEvent.REMOVED);
                             break;
                         case MOVED_NODE:
                             submitNodeListRefresh();
@@ -2258,9 +2265,9 @@ public class Cluster implements Closeable {
                                     return;
 
                                 // See NEW_NODE above
-                                submitNodeRefresh(h, Host.State.ADDED, true);
+                                submitNodeRefresh(h, HostEvent.ADDED);
                             } else {
-                                submitNodeRefresh(hostUp, Host.State.UP, false);
+                                submitNodeRefresh(hostUp, HostEvent.UP);
                             }
                             break;
                         case DOWN:
@@ -2270,7 +2277,7 @@ public class Cluster implements Closeable {
                             // right away, so we favor the detection to make the Host.isUp method more reliable.
                             Host hostDown = metadata.getHost(stAddr);
                             if (hostDown != null)
-                                triggerOnDown(hostDown, true);
+                                submitNodeRefresh(hostDown, HostEvent.DOWN);
                             break;
                     }
                     break;
@@ -2414,22 +2421,6 @@ public class Cluster implements Closeable {
             }
 
             @Override
-            public boolean equals(Object o) {
-                if (this == o)
-                    return true;
-                if (o == null || getClass() != o.getClass())
-                    return false;
-                SchemaRefreshRequest that = (SchemaRefreshRequest)o;
-                return Objects.equal(keyspace, that.keyspace) &&
-                    Objects.equal(table, that.table);
-            }
-
-            @Override
-            public int hashCode() {
-                return Objects.hashCode(keyspace, table);
-            }
-
-            @Override
             public String toString() {
                 return Objects.toStringHelper(this)
                     .add("keyspace", keyspace)
@@ -2442,44 +2433,18 @@ public class Cluster implements Closeable {
 
             private final Host host;
 
-            private final Host.State state;
+            private final HostEvent eventType;
 
             private final long created;
 
-            private NodeRefreshRequest(Host host, Host.State state, boolean delay) {
+            private NodeRefreshRequest(Host host, HostEvent eventType) {
                 this.host = host;
-                this.state = state;
-                this.created = delay ? System.currentTimeMillis() : -1;
-            }
-
-            @Override
-            public boolean equals(Object o) {
-                if (this == o)
-                    return true;
-                if (o == null || getClass() != o.getClass())
-                    return false;
-                NodeRefreshRequest that = (NodeRefreshRequest)o;
-                return Objects.equal(host, that.host) &&
-                    Objects.equal(state, that.state);
-            }
-
-            @Override
-            public int hashCode() {
-                return Objects.hashCode(host, state);
-            }
-
-            @Override
-            public String toString() {
-                return Objects.toStringHelper(this)
-                    .add("host", host)
-                    .add("state", state)
-                    .toString();
+                this.eventType = eventType;
+                this.created = System.currentTimeMillis();
             }
 
             @Override
             public long getDelay(TimeUnit unit) {
-                if(created == -1)
-                    return -1;
                 long now = System.currentTimeMillis();
                 long delayMillis = created + NEW_NODE_DELAY_SECONDS * 1000 - now;
                 return unit.convert(delayMillis, TimeUnit.MILLISECONDS);
@@ -2489,6 +2454,15 @@ public class Cluster implements Closeable {
             public int compareTo(Delayed o) {
                 return Long.compare(this.created, ((NodeRefreshRequest)o).created);
             }
+
+            @Override
+            public String toString() {
+                return Objects.toStringHelper(this)
+                    .add("host", host)
+                    .add("eventType", eventType)
+                    .toString();
+            }
+
         }
 
         private class RefreshNodeListTimerTask extends ExceptionCatchingRunnable {
@@ -2512,6 +2486,10 @@ public class Cluster implements Closeable {
             }
         }
 
+    }
+
+    private enum HostEvent {
+        UP, DOWN, ADDED, REMOVED
     }
 
     /**
