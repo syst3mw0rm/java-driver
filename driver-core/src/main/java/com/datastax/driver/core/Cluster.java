@@ -2111,8 +2111,8 @@ public class Cluster implements Closeable {
             try {
                 final Set<SchemaRefreshRequest> requests = new HashSet<SchemaRefreshRequest>();
                 int drained = schemaRefreshRequests.drainTo(requests);
-                if (!requests.isEmpty()) {
-                    logger.trace("Flushing {} schema refresh requests", requests.size());
+                if (drained > 0) {
+                    logger.trace("Flushing {} schema refresh requests", drained);
                     SchemaRefreshRequest coalesced = null;
                     for (SchemaRefreshRequest request : requests) {
                         coalesced = coalesced == null ? request : coalesced.coalesce(request);
@@ -2132,8 +2132,8 @@ public class Cluster implements Closeable {
             try {
                 Set<NodeRefreshRequest> requests = new HashSet<NodeRefreshRequest>();
                 int drained = nodeRefreshRequests.drainTo(requests);
-                if (!requests.isEmpty()) {
-                    logger.trace("Flushing {} node refresh requests", requests.size());
+                if (drained > 0) {
+                    logger.trace("Flushing {} node refresh requests", drained);
                     Map<Host, HostEvent> hosts = new HashMap<Host, HostEvent>();
                     for (NodeRefreshRequest req : requests) {
                         hosts.put(req.host, req.eventType);
