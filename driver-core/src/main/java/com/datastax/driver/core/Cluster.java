@@ -1263,13 +1263,6 @@ public class Cluster implements Closeable {
 
             this.scheduledTasksExecutor.scheduleWithFixedDelay(new CleanupIdleConnectionsTask(), 10, 10, TimeUnit.SECONDS);
 
-            this.scheduledTasksExecutor.scheduleWithFixedDelay(new RefreshNodeListTimerTask(),
-                REFRESH_NODE_LIST_INTERVAL_MILLIS, REFRESH_NODE_LIST_INTERVAL_MILLIS, TimeUnit.MILLISECONDS);
-            this.scheduledTasksExecutor.scheduleWithFixedDelay(new RefreshSchemaTimerTask(),
-                REFRESH_SCHEMA_INTERVAL_MILLIS, REFRESH_SCHEMA_INTERVAL_MILLIS, TimeUnit.MILLISECONDS);
-            this.scheduledTasksExecutor.scheduleWithFixedDelay(new RefreshNodeTimerTask(),
-                REFRESH_NODE_INTERVAL_MILLIS, REFRESH_NODE_INTERVAL_MILLIS, TimeUnit.MILLISECONDS);
-
             for (InetSocketAddress address : contactPoints) {
                 // We don't want to signal -- call onAdd() -- because nothing is ready
                 // yet (loadbalancing policy, control connection, ...). All we want is
@@ -1330,6 +1323,27 @@ public class Cluster implements Closeable {
                                 listener.onAdd(host);
                         }
                         isFullyInit = true;
+
+                        this.scheduledTasksExecutor.scheduleWithFixedDelay(new ExceptionCatchingRunnable() {
+                            @Override
+                            public void runMayThrow() {
+                                flushNodeListRequests();
+                            }
+                        }, REFRESH_NODE_LIST_INTERVAL_MILLIS, REFRESH_NODE_LIST_INTERVAL_MILLIS, TimeUnit.MILLISECONDS);
+
+                        this.scheduledTasksExecutor.scheduleWithFixedDelay(new ExceptionCatchingRunnable() {
+                            @Override
+                            public void runMayThrow() throws InterruptedException {
+                                flushSchemaRefreshRequests();
+                            }
+                        }, REFRESH_SCHEMA_INTERVAL_MILLIS, REFRESH_SCHEMA_INTERVAL_MILLIS, TimeUnit.MILLISECONDS);
+
+                        this.scheduledTasksExecutor.scheduleWithFixedDelay(new ExceptionCatchingRunnable() {
+                            @Override
+                            public void runMayThrow() throws InterruptedException, ExecutionException {
+                                flushNodeRefreshRequests();
+                            }
+                        }, REFRESH_NODE_INTERVAL_MILLIS, REFRESH_NODE_INTERVAL_MILLIS, TimeUnit.MILLISECONDS);
 
                         return;
                     } catch (UnsupportedProtocolVersionException e) {
@@ -2396,27 +2410,6 @@ public class Cluster implements Closeable {
                     .toString();
             }
 
-        }
-
-        private class RefreshNodeListTimerTask extends ExceptionCatchingRunnable {
-            @Override
-            public void runMayThrow() {
-                flushNodeListRequests();
-            }
-        }
-
-        private class RefreshSchemaTimerTask extends ExceptionCatchingRunnable {
-            @Override
-            public void runMayThrow() throws InterruptedException {
-                flushSchemaRefreshRequests();
-            }
-        }
-
-        private class RefreshNodeTimerTask extends ExceptionCatchingRunnable {
-            @Override
-            public void runMayThrow() throws InterruptedException, ExecutionException {
-                flushNodeRefreshRequests();
-            }
         }
 
     }
