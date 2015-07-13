@@ -2399,7 +2399,7 @@ public class Cluster implements Closeable {
 
             @Override
             public int compareTo(Delayed o) {
-                return Long.compare(this.created, ((NodeRefreshRequest)o).created);
+                return ComparisonChain.start().compare(this.created, ((NodeRefreshRequest)o).created).result();
             }
 
             @Override
