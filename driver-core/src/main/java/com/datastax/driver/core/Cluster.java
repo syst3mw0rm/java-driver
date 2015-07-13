@@ -1329,21 +1329,21 @@ public class Cluster implements Closeable {
                             public void runMayThrow() {
                                 flushNodeListRequests();
                             }
-                        }, REFRESH_NODE_LIST_INTERVAL_MILLIS, REFRESH_NODE_LIST_INTERVAL_MILLIS, TimeUnit.MILLISECONDS);
+                        }, 0, REFRESH_NODE_LIST_INTERVAL_MILLIS, TimeUnit.MILLISECONDS);
 
                         this.scheduledTasksExecutor.scheduleWithFixedDelay(new ExceptionCatchingRunnable() {
                             @Override
                             public void runMayThrow() throws InterruptedException {
                                 flushSchemaRefreshRequests();
                             }
-                        }, REFRESH_SCHEMA_INTERVAL_MILLIS, REFRESH_SCHEMA_INTERVAL_MILLIS, TimeUnit.MILLISECONDS);
+                        }, 0, REFRESH_SCHEMA_INTERVAL_MILLIS, TimeUnit.MILLISECONDS);
 
                         this.scheduledTasksExecutor.scheduleWithFixedDelay(new ExceptionCatchingRunnable() {
                             @Override
                             public void runMayThrow() throws InterruptedException, ExecutionException {
                                 flushNodeRefreshRequests();
                             }
-                        }, REFRESH_NODE_INTERVAL_MILLIS, REFRESH_NODE_INTERVAL_MILLIS, TimeUnit.MILLISECONDS);
+                        }, 0, REFRESH_NODE_INTERVAL_MILLIS, TimeUnit.MILLISECONDS);
 
                         return;
                     } catch (UnsupportedProtocolVersionException e) {
@@ -2050,13 +2050,13 @@ public class Cluster implements Closeable {
 
         void submitSchemaRefresh(String keyspace, String table) {
             SchemaRefreshRequest request = new SchemaRefreshRequest(keyspace, table);
-            logger.trace("Submitting {}", request);
+            logger.trace("Submitting schema refresh: {}", request);
             pendingSchemaRefreshRequests.add(request);
         }
 
         void submitNodeRefresh(Host host, HostEvent eventType) {
             NodeRefreshRequest request = new NodeRefreshRequest(host, eventType);
-            logger.trace("Submitting {}", request);
+            logger.trace("Submitting node refresh: {}", request);
             pendingNodeRefreshRequests.add(request);
         }
 
