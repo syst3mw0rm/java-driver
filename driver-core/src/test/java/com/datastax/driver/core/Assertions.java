@@ -38,4 +38,13 @@ public class Assertions extends org.assertj.core.api.Assertions{
     public static LocalDateAssert assertThat(LocalDate localDate) {
         return new LocalDateAssert(localDate);
     }
+
+    public static TableMetadataAssert assertThat(TableMetadata table) {
+        return new TableMetadataAssert(table);
+    }
+
+    public static ColumnMetadataAssert assertThat(ColumnMetadata column) {
+        return new ColumnMetadataAssert(column);
+    }
+
 }

@@ -46,9 +46,9 @@ public class TableMetadata {
     private static final String DEFAULT_VALUE_ALIAS  = "value";
 
     private static final String FLAGS                = "flags";
-    private static final String DENSE                = "DENSE";
-    private static final String SUPER                = "SUPER";
-    private static final String COMPOUND             = "COMPOUND";
+    private static final String DENSE                = "dense";
+    private static final String SUPER                = "super";
+    private static final String COMPOUND             = "compound";
 
     private static final Comparator<ColumnMetadata> columnMetadataComparator = new Comparator<ColumnMetadata>() {
         public int compare(ColumnMetadata c1, ColumnMetadata c2) {
@@ -114,26 +114,31 @@ public class TableMetadata {
         else if(cassandraVersion.getMajor() > 2)
             id = row.getUUID(CF_ID_V3);
 
-        int partitionKeySize = findPartitionKeySize(rawCols);
+        CassandraTypeParser.ParseResult comparator = null;
+        CassandraTypeParser.ParseResult keyValidator = null;
+        List<String> columnAliases = null;
 
-        int clusteringSize;
+        if(cassandraVersion.getMajor() <= 2) {
+            comparator = CassandraTypeParser.parseWithComposite(row.getString(COMPARATOR));
+            keyValidator = CassandraTypeParser.parseWithComposite(row.getString(KEY_VALIDATOR));
+            columnAliases = cassandraVersion.getMajor() >= 2 || row.getString(COLUMN_ALIASES) == null
+                ? Collections.<String>emptyList()
+                : SimpleJSONParser.parseStringList(row.getString(COLUMN_ALIASES));
+        }
+
+        int partitionKeySize = findPartitionKeySize(rawCols.values(), keyValidator);
+        int clusteringSize = findClusteringSize(comparator, rawCols.values(), columnAliases, cassandraVersion);
+
         boolean isDense;
         boolean isCompact;
-        List<String> columnAliases = null;
-        CassandraTypeParser.ParseResult comparator = null;
         if(cassandraVersion.getMajor() > 2) {
-            clusteringSize = findClusteringSize(rawCols);
             Set<String> flags = row.getSet(FLAGS, String.class);
             isDense = flags.contains(DENSE);
             boolean isSuper = flags.contains(SUPER);
             boolean isCompound = flags.contains(COMPOUND);
             isCompact = isSuper || isDense || !isCompound;
         } else {
-            comparator = CassandraTypeParser.parseWithComposite(row.getString(COMPARATOR));
-            columnAliases = row.getString(COLUMN_ALIASES) == null
-                ? Collections.<String>emptyList()
-                : SimpleJSONParser.parseStringList(row.getString(COLUMN_ALIASES));
-            clusteringSize = findClusteringSize(comparator, rawCols.values(), columnAliases);
+            assert comparator != null;
             isDense = clusteringSize != comparator.types.size() - 1;
             isCompact = isDense || !comparator.isComposite;
         }
@@ -141,9 +146,9 @@ public class TableMetadata {
         List<ColumnMetadata> partitionKey = nullInitializedList(partitionKeySize);
         List<ColumnMetadata> clusteringColumns = nullInitializedList(clusteringSize);
         List<Order> clusteringOrder = nullInitializedList(clusteringSize);
+
         // We use a linked hashmap because we will keep this in the order of a 'SELECT * FROM ...'.
         LinkedHashMap<String, ColumnMetadata> columns = new LinkedHashMap<String, ColumnMetadata>();
-
 
         Options options = null;
         try {
@@ -163,12 +168,16 @@ public class TableMetadata {
         Set<ColumnMetadata> otherColumns = new TreeSet<ColumnMetadata>(columnMetadataComparator);
 
         if (cassandraVersion.getMajor() < 2) {
+
+            assert comparator != null;
+            assert keyValidator != null;
+            assert columnAliases != null;
+
             // In C* 1.2, only the REGULAR columns are in the columns schema table, so we need to add the names from
             // the aliases (and make sure we handle default aliases).
             List<String> keyAliases = row.getString(KEY_ALIASES) == null
                                     ? Collections.<String>emptyList()
                                     : SimpleJSONParser.parseStringList(row.getString(KEY_ALIASES));
-            CassandraTypeParser.ParseResult keyValidator = CassandraTypeParser.parseWithComposite(row.getString(KEY_VALIDATOR));
             for (int i = 0; i < partitionKey.size(); i++) {
                 String alias = keyAliases.size() > i ? keyAliases.get(i) : (i == 0 ? DEFAULT_KEY_ALIAS : DEFAULT_KEY_ALIAS + (i + 1));
                 partitionKey.set(i, ColumnMetadata.forAlias(tm, alias, keyValidator.types.get(i)));
@@ -214,33 +223,39 @@ public class TableMetadata {
         return tm;
     }
 
-    private static int findPartitionKeySize(Map<String, ColumnMetadata.Raw> rawCols) {
-        int partitionKeySize = 0;
-        for (ColumnMetadata.Raw col : rawCols.values())
+    private static int findPartitionKeySize(Collection<ColumnMetadata.Raw> cols, CassandraTypeParser.ParseResult keyValidator) {
+        // C* 1.2, 2.0, 2.1 and 2.2
+        if(keyValidator != null)
+            return keyValidator.types.size();
+        // C* 3.0 onwards
+        int maxId = -1;
+        for (ColumnMetadata.Raw col : cols)
             if (col.kind == ColumnMetadata.Raw.Kind.PARTITION_KEY)
-                partitionKeySize++;
-        return partitionKeySize;
-    }
-
-    private static int findClusteringSize(Map<String, ColumnMetadata.Raw> rawCols) {
-        int partitionKeySize = 0;
-        for (ColumnMetadata.Raw col : rawCols.values())
-            if (col.kind == ColumnMetadata.Raw.Kind.CLUSTERING_COLUMN)
-                partitionKeySize++;
-        return partitionKeySize;
+                maxId = Math.max(maxId, col.componentIndex);
+        return maxId + 1;
     }
 
     private static int findClusteringSize(CassandraTypeParser.ParseResult comparator,
                                           Collection<ColumnMetadata.Raw> cols,
-                                          List<String> columnAliases) {
-        // For 1.2, we need to infer it based on whether the comparator is composite or not, and whether we have
+                                          List<String> columnAliases,
+                                          VersionNumber cassandraVersion) {
+        // In 2.0 onwards, this is relatively easy, we just find the biggest 'componentIndex' amongst the clustering columns.
+        // For 1.2 however, this is slightly more subtle: we need to infer it based on whether the comparator is composite or not, and whether we have
         // regular columns or not.
-        int size = comparator.types.size();
-        if (comparator.isComposite)
-            return !comparator.collections.isEmpty() || (columnAliases.size() == size - 1 && comparator.types.get(size - 1).equals(DataType.text())) ? size - 1 : size;
-        else
-            // We know cols only has the REGULAR ones for 1.2
-            return !columnAliases.isEmpty() || cols.isEmpty() ? size : 0;
+        if (cassandraVersion.getMajor() >= 2) {
+            int maxId = -1;
+            for (ColumnMetadata.Raw col : cols)
+                if (col.kind == ColumnMetadata.Raw.Kind.CLUSTERING_COLUMN)
+                    maxId = Math.max(maxId, col.componentIndex);
+            return maxId + 1;
+        } else {
+            int size = comparator.types.size();
+            if (comparator.isComposite)
+                return !comparator.collections.isEmpty() || (columnAliases.size() == size - 1 && comparator.types.get(size - 1).equals(DataType.text())) ? size - 1 : size;
+            else
+                // We know cols only has the REGULAR ones for 1.2
+                return !columnAliases.isEmpty() || cols.isEmpty() ? size : 0;
+        }
     }
 
     private static <T> List<T> nullInitializedList(int size) {
@@ -553,8 +568,6 @@ public class TableMetadata {
         private static final String COMPACTION                  = "compaction";
         private static final String COMPACTION_CLASS            = "compaction_strategy_class";
         private static final String COMPACTION_OPTIONS          = "compaction_strategy_options";
-        private static final String MIN_COMPACTION_THRESHOLD    = "min_compaction_threshold";
-        private static final String MAX_COMPACTION_THRESHOLD    = "max_compaction_threshold";
         private static final String POPULATE_CACHE_ON_FLUSH     = "populate_io_cache_on_flush";
         private static final String COMPRESSION                 = "compression";
         private static final String COMPRESSION_PARAMS          = "compression_parameters";
