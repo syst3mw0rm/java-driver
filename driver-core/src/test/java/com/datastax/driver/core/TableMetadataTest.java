@@ -108,23 +108,11 @@ public class TableMetadataTest extends CCMBridge.PerClassSingleNodeCluster {
         session.execute(cql);
         TableMetadata table = cluster.getMetadata().getKeyspace(keyspace).getTable("compact_static");
         // then
-        VersionNumber version = TestUtils.findHost(cluster, 1).getCassandraVersion();
-        // Cassandra 3.0 +
-        if (version.getMajor() > 2) {
-            Assertions.assertThat(table).isNotNull().hasName("compact_static").hasNumberOfColumns(6).isCompactStorage();
-            Assertions.assertThat(table.getColumns().get(0)).isNotNull().hasName("k").isPartitionKey().hasType(text());
-            Assertions.assertThat(table.getColumns().get(1)).isNotNull().hasName("column1").isClusteringColumn().hasType(text()).isNotStatic();
-            Assertions.assertThat(table.getColumns().get(2)).isNotNull().hasName("i").isRegularColumn().hasType(cint()).isStatic();
-            Assertions.assertThat(table.getColumns().get(3)).isNotNull().hasName("t").isRegularColumn().hasType(timeuuid()).isStatic();
-            Assertions.assertThat(table.getColumns().get(4)).isNotNull().hasName("v").isRegularColumn().hasType(cint()).isStatic();
-            Assertions.assertThat(table.getColumns().get(5)).isNotNull().hasName("value").isRegularColumn().hasType(blob()).isNotStatic();
-        } else {
-            Assertions.assertThat(table).isNotNull().hasName("compact_static").hasNumberOfColumns(4).isCompactStorage();
-            Assertions.assertThat(table.getColumns().get(0)).isNotNull().hasName("k").isPartitionKey().hasType(text());
-            Assertions.assertThat(table.getColumns().get(1)).isNotNull().hasName("i").isRegularColumn().hasType(cint());
-            Assertions.assertThat(table.getColumns().get(2)).isNotNull().hasName("t").isRegularColumn().hasType(timeuuid());
-            Assertions.assertThat(table.getColumns().get(3)).isNotNull().hasName("v").isRegularColumn().hasType(cint());
-        }
+        Assertions.assertThat(table).isNotNull().hasName("compact_static").hasNumberOfColumns(4).isCompactStorage();
+        Assertions.assertThat(table.getColumns().get(0)).isNotNull().hasName("k").isPartitionKey().hasType(text());
+        Assertions.assertThat(table.getColumns().get(1)).isNotNull().hasName("i").isRegularColumn().hasType(cint());
+        Assertions.assertThat(table.getColumns().get(2)).isNotNull().hasName("t").isRegularColumn().hasType(timeuuid());
+        Assertions.assertThat(table.getColumns().get(3)).isNotNull().hasName("v").isRegularColumn().hasType(cint());
     }
 
     @Test(groups = "short")
@@ -140,8 +128,6 @@ public class TableMetadataTest extends CCMBridge.PerClassSingleNodeCluster {
         session.execute(cql);
         TableMetadata table = cluster.getMetadata().getKeyspace(keyspace).getTable("compact_dynamic");
         // then
-        VersionNumber version = TestUtils.findHost(cluster, 1).getCassandraVersion();
-        // Cassandra 3.0 +
         Assertions.assertThat(table).isNotNull().hasName("compact_dynamic").hasNumberOfColumns(3).isCompactStorage();
         Assertions.assertThat(table.getColumns().get(0)).isNotNull().hasName("k").isPartitionKey().hasType(text());
         Assertions.assertThat(table.getColumns().get(1)).isNotNull().hasName("c").isClusteringColumn().hasClusteringOrder(ASC).hasType(cint());

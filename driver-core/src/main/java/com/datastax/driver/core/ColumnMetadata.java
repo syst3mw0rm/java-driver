@@ -237,7 +237,7 @@ public class ColumnMetadata {
         }
 
         public final String name;
-        public final Kind kind;
+        public Kind kind;
         public final int componentIndex;
         public final DataType dataType;
         public final boolean isReversed;
