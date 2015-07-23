@@ -116,6 +116,23 @@ public class TableMetadataTest extends CCMBridge.PerClassSingleNodeCluster {
     }
 
     @Test(groups = "short")
+    public void should_parse_dense_table() {
+        // given
+        String cql = String.format("CREATE TABLE %s.dense (\n"
+            + "        k int,\n"
+            + "        c int,\n"
+            + "        PRIMARY KEY (k, c)\n"
+            + "    ) WITH COMPACT STORAGE;", keyspace);
+        // when
+        session.execute(cql);
+        TableMetadata table = cluster.getMetadata().getKeyspace(keyspace).getTable("dense");
+        // then
+        Assertions.assertThat(table).isNotNull().hasName("dense").hasNumberOfColumns(2).isCompactStorage();
+        Assertions.assertThat(table.getColumns().get(0)).isNotNull().hasName("k").isPartitionKey().hasType(text());
+        Assertions.assertThat(table.getColumns().get(1)).isNotNull().hasName("c").isClusteringColumn().hasType(cint());
+    }
+
+    @Test(groups = "short")
     public void should_parse_compact_dynamic_table() {
         // given
         String cql = String.format("CREATE TABLE %s.compact_dynamic (\n"
