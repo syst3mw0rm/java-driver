@@ -172,15 +172,23 @@ public class QueryOptions {
     }
 
     /**
-     * Set whether the driver should re-prepare all cached prepared statements when
-     * it receives an onUp notification from the coordinator.
+     * Set whether the driver should re-prepare all cached prepared statements on a node
+     * when its marks that node back up.
      *
-     * If the node had a temporary network issue and had not completely crashed, then it
-     * is useless to re-prepare all queries on it.
+     * This option is enabled by default. Turning it off has the following consequences:
+     * <ul>
+     *     <li>if the node was marked down because of a temporary network issue but had
+     *     not completely crashed, it still has all prepared statements in its cache. So
+     *     not re-preparing is a win because you avoid redundant work;</li>
+     *     <li>on the other hand, if the node had really crashed, its prepared statement
+     *     cache is empty after a restart. Therefore the first execution of every prepared
+     *     statement on this node will require two additional roundtrips: one to re-send
+     *     the query to prepare, and one to retry the execution.</li>
+     * </ul>
+     * As such this feature is a tradeoff and you should test what works best in your
+     * environment.
      *
-     * @jira_ticket JAVA-658
-     * @param reprepareOnUp the boolean indicating whether the driver should re-prepare all
-     *                      cached queries when it receives a onUp notification.
+     * @param reprepareOnUp whether the driver should re-prepare when marking a node up.
      * @return this {@code QueryOptions} instance.
      */
     public QueryOptions setReprepareOnUp(boolean reprepareOnUp){
@@ -189,10 +197,10 @@ public class QueryOptions {
     }
 
     /**
-     * The value indicating whether the driver should re-prepare queries on an onUp
-     * notification from the coordinator.
+     * Whether the driver should re-prepare all cached prepared statements on a node
+     * when its marks that node back up.
      *
-     * @return the value for re-preparing the statements.
+     * @return the value.
      */
     public boolean isReprepareOnUp() {
         return this.reprepareOnUp;
