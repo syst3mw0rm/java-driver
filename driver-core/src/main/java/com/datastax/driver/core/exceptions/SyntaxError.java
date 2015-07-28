@@ -28,7 +28,7 @@ public class SyntaxError extends QueryValidationException implements Coordinator
     private final InetSocketAddress address;
 
     /**
-     * This constructor is kept for backwards compatibility.
+     * @deprecated This constructor is kept for backwards compatibility.
      */
     @Deprecated
     public SyntaxError(String msg) {

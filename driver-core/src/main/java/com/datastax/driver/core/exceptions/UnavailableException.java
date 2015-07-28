@@ -117,12 +117,12 @@ public class UnavailableException extends QueryExecutionException implements Coo
      * address that caused this exception to be raised.
      * <p>
      * This method is mainly intended for internal use by the driver and exists mainly because:
-     * <p>
-     * 1) the original exception was decoded from a response frame
-     * and at that time, the coordinator address was not available; and
-     * <p>
-     * 2) The newly-created exception will refer to the current thread in its stack trace,
-     * which generally yields a more user-friendly stack trace that the original one.
+     * <ol>
+     *   <li>the original exception was decoded from a response frame
+     *   and at that time, the coordinator address was not available; and</li>
+     *   <li>the newly-created exception will refer to the current thread in its stack trace,
+     *   which generally yields a more user-friendly stack trace that the original one.</li>
+     * </ol>
      *
      * @param address The full address of the host that caused this exception to be thrown.
      * @return a copy/clone of this exception, but with the given host address instead of the original one.

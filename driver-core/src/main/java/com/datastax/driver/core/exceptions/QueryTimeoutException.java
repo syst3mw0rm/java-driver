@@ -36,7 +36,7 @@ public abstract class QueryTimeoutException extends QueryExecutionException impl
     private final int required;
 
     /**
-     * This constructor is kept for backwards compatibility.
+     * @deprecated This constructor is kept for backwards compatibility.
      */
     @Deprecated
     protected QueryTimeoutException(String msg, ConsistencyLevel consistency, int received, int required) {
@@ -44,7 +44,7 @@ public abstract class QueryTimeoutException extends QueryExecutionException impl
     }
 
     /**
-     * This constructor is kept for backwards compatibility.
+     * @deprecated This constructor is kept for backwards compatibility.
      */
     @Deprecated
     protected QueryTimeoutException(String msg, Throwable cause, ConsistencyLevel consistency, int received, int required) {
