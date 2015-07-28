@@ -925,7 +925,7 @@ public class Cluster implements Closeable {
         /**
          * Configures the {@link CodecRegistry} instance to use for the new cluster.
          * <p>
-         * If no codec registry is set through this method, a newly-created instance
+         * If no codec registry is set through this method, {@link CodecRegistry#DEFAULT_INSTANCE}
          * will be used instead.
          *
          * @param codecRegistry the codec registry to use.

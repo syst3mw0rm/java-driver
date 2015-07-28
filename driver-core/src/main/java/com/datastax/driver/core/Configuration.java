@@ -257,7 +257,7 @@ public class Configuration {
                 metricsOptions != null ? metricsOptions : new MetricsOptions(),
                 queryOptions != null ? queryOptions : new QueryOptions(),
                 nettyOptions != null ? nettyOptions : NettyOptions.DEFAULT_INSTANCE,
-                codecRegistry != null ? codecRegistry : new CodecRegistry());
+                codecRegistry != null ? codecRegistry : CodecRegistry.DEFAULT_INSTANCE);
         }
     }
 }

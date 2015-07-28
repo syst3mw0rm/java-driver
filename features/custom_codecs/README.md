@@ -120,6 +120,9 @@ When you instantiate a `CodecRegistry`, it automatically registers all the defau
 This ensures that the registry will not lack of an essential codec. *You cannot deregister default codecs, only
 register new ones*.
 
+Note: if you don't explicitly register a `CodecRegistry` on your `Cluster`, 
+it will use `CodecRegistry.DEFAULT_INSTANCE`.
+
 The third step is to associate your `CodecRegistry` instance with your `Cluster` instance:
 
 ```java

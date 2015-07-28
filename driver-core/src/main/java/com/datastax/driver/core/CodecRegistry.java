@@ -24,6 +24,7 @@ import java.util.concurrent.ExecutionException;
 import com.google.common.base.Objects;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
+import com.google.common.cache.CacheStats;
 import com.google.common.cache.LoadingCache;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
@@ -187,10 +188,12 @@ public final class CodecRegistry {
     }
 
     /**
-     * An immutable instance of CodecRegistry.
-     * This is only meant to be used internally by the driver.
+     * A default instance of CodecRegistry.
+     * For most applications, sharing a single instance of CodecRegistry is fine.
+     * But note that any codec registered with this instance will immediately
+     * be available for all its clients.
      */
-    public static final CodecRegistry IMMUTABLE_INSTANCE = new CodecRegistry(true);
+    public static final CodecRegistry DEFAULT_INSTANCE = new CodecRegistry();
 
     private static final class CacheKey {
 
@@ -219,8 +222,6 @@ public final class CodecRegistry {
         }
     }
 
-    private final boolean immutable;
-
     /**
      * The list of all known codecs.
      * This list is initialized with the built-in codecs;
@@ -234,14 +235,27 @@ public final class CodecRegistry {
      */
     private final LoadingCache<CacheKey, TypeCodec<?>> cache;
 
+    /**
+     * Creates a default CodecRegistry instance with default cache options.
+     */
     public CodecRegistry() {
-        this(false);
+        this(String.format("initialCapacity=%s,maximumSize=%s,expireAfterAccess=%sm,concurrencyLevel=%s",
+            DEFAULT_CODECS.size(),
+            DEFAULT_CODECS.size() * 8,
+            60, // 60 minutes
+            Runtime.getRuntime().availableProcessors() * 4));
     }
 
-    private CodecRegistry(boolean immutable) {
-        this.immutable = immutable;
+    /**
+     * Creates a CodecRegistry whose {@link LoadingCache cache} is created
+     * with the provided specs.
+     *
+     * @param cacheSpec The cache specs to use (see {@link CacheBuilder#from(String)}).
+     * @see CacheBuilder#from(String)
+     */
+    public CodecRegistry(String cacheSpec) {
         this.codecs = new CopyOnWriteArrayList<TypeCodec<?>>(DEFAULT_CODECS);
-        this.cache = CacheBuilder.newBuilder()
+        this.cache = CacheBuilder.from(cacheSpec)
             .build(
                 new CacheLoader<CacheKey, TypeCodec<?>>() {
                     public TypeCodec<?> load(CacheKey cacheKey) {
@@ -314,8 +328,6 @@ public final class CodecRegistry {
      * @return this Builder (for method chaining).
      */
     public CodecRegistry register(Iterable<? extends TypeCodec<?>> codecs, boolean includeDerivedCollectionCodecs) {
-        if(immutable)
-            throw new UnsupportedOperationException("This CodecRegistry instance is immutable");
         for (TypeCodec<?> codec : codecs) {
             // add this codec to the beginning of the list so that it gets higher priority
             this.codecs.add(codec);
@@ -336,6 +348,14 @@ public final class CodecRegistry {
     }
 
     /**
+     * Return a {@link CacheStats} object for this registry's internal cache.
+     *
+     * @return a {@link CacheStats} object for this registry's internal cache.
+     */
+    public CacheStats getStats() {
+        return cache.stats();
+    }
+    /**
      * Returns a {@link TypeCodec codec} that accepts the given value.
      * <p>
      * This method takes an actual Java object and tries to locate a suitable codec for it.
@@ -353,7 +373,7 @@ public final class CodecRegistry {
      * <p>
      * Regular application code should avoid using this method.
      * <p>
-     * Codecs returned by this method are NOT cached.
+     * Codecs returned by this method are <em>NOT</em> cached.
      *
      * @param value The value the codec should accept; must not be {@code null}.
      * @return A suitable codec.
@@ -381,7 +401,7 @@ public final class CodecRegistry {
      * @throws CodecNotFoundException if a suitable codec cannot be found.
      */
     public <T> TypeCodec<T> codecFor(DataType cqlType) throws CodecNotFoundException {
-        return lookupCache(cqlType, null);
+        return lookupCodec(cqlType, null);
     }
 
     /**
@@ -428,7 +448,7 @@ public final class CodecRegistry {
     public <T> TypeCodec<T> codecFor(DataType cqlType, TypeToken<T> javaType) throws CodecNotFoundException {
         checkNotNull(cqlType, "Parameter cqlType cannot be null");
         checkNotNull(javaType, "Parameter javaType cannot be null");
-        return lookupCache(cqlType, javaType);
+        return lookupCodec(cqlType, javaType);
     }
 
     /**
@@ -441,7 +461,7 @@ public final class CodecRegistry {
      * can be an expensive operation; besides, the resulting codec cannot be cached.
      * Therefore there might be a performance penalty when using this method.
      * <p>
-     * Codecs returned by this method <em>may</em> be cached.
+     * Codecs returned by this method are <em>NOT</em> cached.
      *
      * @param cqlType The {@link DataType CQL type} the codec should accept; must not be {@code null}.
      * @param value The value the codec should accept; must not be {@code null}.
@@ -454,7 +474,7 @@ public final class CodecRegistry {
         return findCodec(cqlType, value);
     }
 
-    private <T> TypeCodec<T> lookupCache(DataType cqlType, TypeToken<T> javaType) {
+    private <T> TypeCodec<T> lookupCodec(DataType cqlType, TypeToken<T> javaType) {
         checkNotNull(cqlType, "Parameter cqlType cannot be null");
         if(logger.isTraceEnabled())
             logger.trace("Looking up codec for {} <-> {}", cqlType, javaType);
@@ -462,8 +482,9 @@ public final class CodecRegistry {
         try {
             return (TypeCodec<T>)cache.get(cacheKey);
         } catch (UncheckedExecutionException e) {
-            if(e.getCause() instanceof CodecNotFoundException)
-                throw (CodecNotFoundException)e.getCause();
+            if(e.getCause() instanceof CodecNotFoundException) {
+                throw (CodecNotFoundException) e.getCause();
+            }
             throw new CodecNotFoundException(e.getCause(), cqlType, javaType);
         } catch (ExecutionException e) {
             throw new CodecNotFoundException(e.getCause(), cqlType, javaType);
@@ -481,21 +502,7 @@ public final class CodecRegistry {
                 return (TypeCodec<T>)codec;
             }
         }
-        // codec not found among the reservoir of known codecs, try to create an ad-hoc codec;
-        // this situation should happen mainly when dealing with enums, tuples and UDTs,
-        // and collections thereof.
-        TypeCodec<T> codec = maybeCreateCodec(cqlType, javaType);
-        if (codec == null)
-            throw logErrorAndThrow(cqlType, javaType);
-        // double-check that the created codec satisfies the initial request
-        if (!codec.accepts(cqlType) || (javaType != null && !codec.accepts(javaType)))
-            throw logErrorAndThrow(cqlType, javaType);
-
-        if(logger.isTraceEnabled())
-            logger.trace("Codec found: {}", codec);
-        // add the codec for future use
-        codecs.addIfAbsent(codec);
-        return codec;
+        return createCodec(cqlType, javaType);
     }
 
     private <T> TypeCodec<T> findCodec(DataType cqlType, T value) {
@@ -509,9 +516,22 @@ public final class CodecRegistry {
                 return (TypeCodec<T>)codec;
             }
         }
-        // codec not found among the reservoir of known codecs, try to create an ad-hoc codec;
-        // this situation should happen mainly when dealing with enums, tuples and UDTs,
-        // and collections thereof.
+        return createCodec(cqlType, value);
+    }
+
+    private <T> TypeCodec<T> createCodec(DataType cqlType, TypeToken<T> javaType) {
+        TypeCodec<T> codec = maybeCreateCodec(cqlType, javaType);
+        if (codec == null)
+            throw logErrorAndThrow(cqlType, javaType);
+        // double-check that the created codec satisfies the initial request
+        if (!codec.accepts(cqlType) || (javaType != null && !codec.accepts(javaType)))
+            throw logErrorAndThrow(cqlType, javaType);
+        if(logger.isTraceEnabled())
+            logger.trace("Codec created: {}", codec);
+        return codec;
+    }
+
+    private <T> TypeCodec<T> createCodec(DataType cqlType, T value) {
         TypeCodec<T> codec = maybeCreateCodec(cqlType, value);
         if(codec == null)
             throw logErrorAndThrow(cqlType, TypeToken.of(value.getClass()));
@@ -519,15 +539,11 @@ public final class CodecRegistry {
         if((cqlType != null && !codec.accepts(cqlType)) || !codec.accepts(value))
             throw logErrorAndThrow(cqlType, TypeToken.of(value.getClass()));
         if(logger.isTraceEnabled())
-            logger.trace("Codec found: {}", codec);
-        // add the codec for future use
-        codecs.addIfAbsent(codec);
+            logger.trace("Codec created: {}", codec);
         return codec;
     }
 
     private <T> TypeCodec<T> maybeCreateCodec(DataType cqlType, TypeToken<T> javaType) {
-        if(immutable)
-            return null;
         checkNotNull(cqlType);
 
         if ((cqlType.getName() == VARCHAR || cqlType.getName() == TEXT) && javaType != null && Enum.class.isAssignableFrom(javaType.getRawType())) {
@@ -579,9 +595,8 @@ public final class CodecRegistry {
     }
 
     private <T> TypeCodec<T> maybeCreateCodec(DataType cqlType, T value) {
-        if(immutable)
-            return null;
         checkNotNull(value);
+
         if ((cqlType == null || cqlType.getName() == VARCHAR || cqlType.getName() == TEXT) && value instanceof Enum) {
             return new EnumStringCodec(value.getClass());
         }
