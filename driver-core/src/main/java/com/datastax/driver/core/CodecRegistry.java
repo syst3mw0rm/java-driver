@@ -22,10 +22,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 
 import com.google.common.base.Objects;
-import com.google.common.cache.CacheBuilder;
-import com.google.common.cache.CacheLoader;
-import com.google.common.cache.CacheStats;
-import com.google.common.cache.LoadingCache;
+import com.google.common.cache.*;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.reflect.TypeToken;
@@ -197,11 +194,11 @@ public final class CodecRegistry {
 
     private static final class CacheKey {
 
-        private final TypeToken<?> javaType;
-
         private final DataType cqlType;
 
-        public CacheKey(TypeToken<?> javaType, DataType cqlType) {
+        private final TypeToken<?> javaType;
+
+        public CacheKey(DataType cqlType, TypeToken<?> javaType) {
             this.javaType = javaType;
             this.cqlType = cqlType;
         }
@@ -213,12 +210,28 @@ public final class CodecRegistry {
             if (o == null || getClass() != o.getClass())
                 return false;
             CacheKey cacheKey = (CacheKey)o;
-            return Objects.equal(javaType, cacheKey.javaType) && Objects.equal(cqlType, cacheKey.cqlType);
+            return Objects.equal(cqlType, cacheKey.cqlType) && Objects.equal(javaType, cacheKey.javaType);
         }
 
         @Override
         public int hashCode() {
             return Objects.hashCode(javaType, cqlType);
+        }
+    }
+
+    private static class TypeCodecWeigher implements Weigher<CacheKey, TypeCodec<?>> {
+        @Override
+        public int weigh(CacheKey key, TypeCodec<?> value) {
+            if(DEFAULT_CODECS.contains(value))
+                return 0;
+            return 1;
+        }
+    }
+
+    private class TypeCodecRemovalListener implements RemovalListener<CacheKey, TypeCodec<?>> {
+        @Override
+        public void onRemoval(RemovalNotification<CacheKey, TypeCodec<?>> notification) {
+            logger.trace("Evicting codec from cache: {} (cause: {})", notification.getValue(), notification.getCause());
         }
     }
 
@@ -239,29 +252,23 @@ public final class CodecRegistry {
      * Creates a default CodecRegistry instance with default cache options.
      */
     public CodecRegistry() {
-        this(String.format("initialCapacity=%s,maximumSize=%s,expireAfterAccess=%sm,concurrencyLevel=%s",
-            DEFAULT_CODECS.size(),
-            DEFAULT_CODECS.size() * 8,
-            60, // 60 minutes
-            Runtime.getRuntime().availableProcessors() * 4));
-    }
-
-    /**
-     * Creates a CodecRegistry whose {@link LoadingCache cache} is created
-     * with the provided specs.
-     *
-     * @param cacheSpec The cache specs to use (see {@link CacheBuilder#from(String)}).
-     * @see CacheBuilder#from(String)
-     */
-    public CodecRegistry(String cacheSpec) {
         this.codecs = new CopyOnWriteArrayList<TypeCodec<?>>(DEFAULT_CODECS);
-        this.cache = CacheBuilder.from(cacheSpec)
+        this.cache = CacheBuilder.newBuilder()
+            .initialCapacity(DEFAULT_CODECS.size())
+            .weigher(new TypeCodecWeigher())
+            .removalListener(new TypeCodecRemovalListener())
+            .maximumWeight(DEFAULT_CODECS.size() * 4)
             .build(
                 new CacheLoader<CacheKey, TypeCodec<?>>() {
                     public TypeCodec<?> load(CacheKey cacheKey) {
                         return findCodec(cacheKey.cqlType, cacheKey.javaType);
                     }
                 });
+    }
+
+    public CodecRegistry(LoadingCache<CacheKey, TypeCodec<?>> cache) {
+        this.codecs = new CopyOnWriteArrayList<TypeCodec<?>>(DEFAULT_CODECS);
+        this.cache = cache;
     }
 
     /**
@@ -478,7 +485,7 @@ public final class CodecRegistry {
         checkNotNull(cqlType, "Parameter cqlType cannot be null");
         if(logger.isTraceEnabled())
             logger.trace("Looking up codec for {} <-> {}", cqlType, javaType);
-        CacheKey cacheKey = new CacheKey(javaType, cqlType);
+        CacheKey cacheKey = new CacheKey(cqlType, javaType);
         try {
             return (TypeCodec<T>)cache.get(cacheKey);
         } catch (UncheckedExecutionException e) {
