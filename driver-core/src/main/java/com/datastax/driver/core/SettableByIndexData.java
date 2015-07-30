@@ -506,9 +506,12 @@ public interface SettableByIndexData<T extends SettableByIndexData<T>> {
     /**
      * Sets the {@code i}th value to the provided value.
      * <p>
-     * This method is not suitable to use with custom codecs: it will always
-     * use the default ones for the underlying CQL type. If you want to use
-     * non-default codecs, use {@link #set(int, V, Class)} or {@link #set(int, V, TypeToken)} instead.
+     * This method uses the default codec for the underlying CQL type
+     * to perform serialization, and is safe to be used
+     * <em>as long as only default codecs are in use</em>.
+     * If a second, custom codec for the same CQL type is registered, which one will
+     * be used is unspecified; in such cases, it is preferable to use
+     * the more deterministic methods {@link #set(int, V, Class)} or {@link #set(int, V, TypeToken)} instead.
      *
      * @param i the index of the value to set.
      * @param v the value to set; may be {@code null}.

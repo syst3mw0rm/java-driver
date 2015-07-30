@@ -566,9 +566,12 @@ public interface SettableByNameData<T extends SettableData<T>> {
     /**
      * Sets the value for (all occurrences of) variable {@code name} to the provided value.
      * <p>
-     * This method is not suitable to use with custom codecs: it will always
-     * use the default ones for the underlying CQL type. If you want to use
-     * non-default codecs, use {@link #set(String, V, Class)} or {@link #set(String, V, TypeToken)} instead.
+     * This method uses the default codec for the underlying CQL type
+     * to perform serialization, and is safe to be used
+     * <em>as long as only default codecs are in use</em>.
+     * If a second, custom codec for the same CQL type is registered, which one will
+     * be used is unspecified; in such cases, it is preferable to use
+     * the more deterministic methods {@link #set(String, V, Class)} or {@link #set(String, V, TypeToken)} instead.
      *
      * @param name the name of the value to set; if {@code name} is present multiple
      * times, all its values are set.
