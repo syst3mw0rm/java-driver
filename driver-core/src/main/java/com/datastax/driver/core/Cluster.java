@@ -1214,9 +1214,7 @@ public class Cluster implements Closeable {
         private Manager(String clusterName, List<InetSocketAddress> contactPoints, Configuration configuration, Collection<Host.StateListener> listeners) {
             this.clusterName = clusterName == null ? generateClusterName() : clusterName;
             this.configuration = configuration;
-            this.contactPoints = new ArrayList<InetSocketAddress>(contactPoints);
-            // shuffle contact points to spread load evenly across hosts
-            Collections.shuffle(this.contactPoints);
+            this.contactPoints = contactPoints;
             this.listeners = new CopyOnWriteArraySet<Host.StateListener>(listeners);
         }
 
