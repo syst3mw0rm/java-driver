@@ -23,7 +23,6 @@ import java.util.concurrent.ExecutionException;
 
 import com.google.common.base.Objects;
 import com.google.common.cache.*;
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.reflect.TypeToken;
 import com.google.common.util.concurrent.UncheckedExecutionException;
@@ -46,18 +45,24 @@ import static com.datastax.driver.core.DataType.Name.*;
  * <h3>Usage</h3>
  *
  * <p>
- * To create a default {@link CodecRegistry} instance with all the default codecs used
- * by the Java driver, simply use the following:
+ * Most users won't need to manipulate {@link CodecRegistry} instances directly.
+ * Only those willing to register user-defined codecs are required to do so.
+ * By default, the driver uses {@link CodecRegistry#DEFAULT_INSTANCE}, a shareable
+ * instance that initially contains all the built-in codecs required by the driver.
+ *
+ * <p>
+ * Users willing to customize their {@link CodecRegistry} can do so by {@code register registering}
+ * new {@link TypeCodec}s either on {@link CodecRegistry#DEFAULT_INSTANCE},
+ * or on a newly-crated one:
  *
  * <pre>
- * CodecRegistry myCodecRegistry = new CodecRegistry();
- * </pre>
- *
- * Custom {@link TypeCodec}s can be added to a {@link CodecRegistry} via the {@code register} methods:
- *
- * <pre>
- * CodecRegistry myCodecRegistry = new CodecRegistry()
- *    .register(myCodec1, myCodec2, myCodec3)
+ * CodecRegistry myCodecRegistry;
+ * // use the default instance
+ * myCodecRegistry = CodecRegistry.DEFAULT_INSTANCE;
+ * // or alternatively, create a new one
+ * myCodecRegistry = new CodecRegistry();
+ * // then
+ * myCodecRegistry.register(myCodec1, myCodec2, myCodec3);
  * </pre>
  *
  * <p>
@@ -68,6 +73,7 @@ import static com.datastax.driver.core.DataType.Name.*;
  * In order words, it is not possible to replace an existing codec,
  * specially the built-in ones; it is only possible to enrich the initial
  * set of codecs with new ones.
+ *
  * <p>
  * To be used by the driver, {@link CodecRegistry} instances must then
  * be associated with a {@link Cluster} instance:
@@ -85,8 +91,7 @@ import static com.datastax.driver.core.DataType.Name.*;
  * </pre>
  *
  * <p>
- * For most users, a default {@link CodecRegistry} instance, containing
- * all the default codecs, should be adequate.
+ * By default, {@link Cluster} instances will use {@link CodecRegistry#DEFAULT_INSTANCE}.
  *
  * <h3>Example</h3>
  *
@@ -162,29 +167,6 @@ public final class CodecRegistry {
     );
 
     /**
-     * The default set of codecs used by the Java driver.
-     * They contain codecs to handle native types, and collections thereof (lists, sets and maps).
-     *
-     * Note that the default set of codecs has no support for
-     * <a href="https://github.com/apache/cassandra/blob/trunk/src/java/org/apache/cassandra/db/marshal/AbstractType.java">Cassandra custom types</a>;
-     * to be able to deserialize values of such types, you need to manually register an appropriate codec.
-     */
-    static final ImmutableList<TypeCodec<?>> DEFAULT_CODECS;
-
-    static {
-        ImmutableList.Builder<TypeCodec<?>> builder = new ImmutableList.Builder<TypeCodec<?>>();
-        builder.addAll(PRIMITIVE_CODECS);
-        for (TypeCodec<?> primitiveCodec1 : PRIMITIVE_CODECS) {
-            builder.add(new ListCodec(primitiveCodec1));
-            builder.add(new SetCodec(primitiveCodec1));
-            for (TypeCodec<?> primitiveCodec2 : PRIMITIVE_CODECS) {
-                builder.add(new MapCodec(primitiveCodec1, primitiveCodec2));
-            }
-        }
-        DEFAULT_CODECS = builder.build();
-    }
-
-    /**
      * A default instance of CodecRegistry.
      * For most applications, sharing a single instance of CodecRegistry is fine.
      * But note that any codec registered with this instance will immediately
@@ -219,25 +201,61 @@ public final class CodecRegistry {
         }
     }
 
+    /**
+     * A complexity-based weigher.
+     * Weights are computed according to the CQL type:
+     * - Primtive types weigh 0;
+     * - Collections weigh the total weight of their inner types;
+     * - Collections, UDTs and tuples weigh 1 + the total weight of their inner types;
+     * - Custom (non-CQL) types weigh 2.
+     */
     private static class TypeCodecWeigher implements Weigher<CacheKey, TypeCodec<?>> {
+
         @Override
         public int weigh(CacheKey key, TypeCodec<?> value) {
-            if(DEFAULT_CODECS.contains(value))
-                return 0;
-            return 1;
+            return weigh(key.cqlType);
+        }
+
+        private static int weigh(DataType cqlType) {
+            switch (cqlType.getName()) {
+                default:
+                    return 0;
+                case LIST:
+                case SET:
+                    return weigh(cqlType.getTypeArguments().get(0));
+                case MAP:
+                    return weigh(cqlType.getTypeArguments().get(0)) + weigh(cqlType.getTypeArguments().get(1));
+                case UDT: {
+                    int weight = 1;
+                    for (UserType.Field field : ((UserType)cqlType)) {
+                        weight += weigh(field.getType());
+                    }
+                    return weight;
+                }
+                case TUPLE: {
+                    int weight = 1;
+                    for (DataType componentType : ((TupleType)cqlType).getComponentTypes()) {
+                        weight += weigh(componentType);
+                    }
+                    return weight;
+                }
+                case CUSTOM:
+                    return 2;
+            }
         }
     }
 
     private class TypeCodecRemovalListener implements RemovalListener<CacheKey, TypeCodec<?>> {
         @Override
         public void onRemoval(RemovalNotification<CacheKey, TypeCodec<?>> notification) {
-            logger.trace("Evicting codec from cache: {} (cause: {})", notification.getValue(), notification.getCause());
+            if(logger.isTraceEnabled())
+                logger.trace("Evicting codec from cache: {} (cause: {})", notification.getValue(), notification.getCause());
         }
     }
 
     /**
      * The list of all known codecs.
-     * This list is initialized with the built-in codecs;
+     * This list is initialized with the built-in primitivecodecs;
      * User-defined codecs are appended to the list.
      */
     private final CopyOnWriteArrayList<TypeCodec<?>> codecs;
@@ -252,12 +270,17 @@ public final class CodecRegistry {
      * Creates a default CodecRegistry instance with default cache options.
      */
     public CodecRegistry() {
-        this.codecs = new CopyOnWriteArrayList<TypeCodec<?>>(DEFAULT_CODECS);
+        this.codecs = new CopyOnWriteArrayList<TypeCodec<?>>(PRIMITIVE_CODECS);
         this.cache = CacheBuilder.newBuilder()
-            .initialCapacity(DEFAULT_CODECS.size())
+            // 19 primitive codecs + collections thereof = 19*3 + 19*19 = 418 codecs,
+            // so let' start with roughly 1/4 of that
+            .initialCapacity(100)
             .weigher(new TypeCodecWeigher())
+            // a cache with all 418 default codecs weighs 399 (19*2 + 19*19),
+            // so let's cap at roughly 2.5x this size
+            .maximumWeight(1000)
+            .concurrencyLevel(Runtime.getRuntime().availableProcessors() * 4)
             .removalListener(new TypeCodecRemovalListener())
-            .maximumWeight(DEFAULT_CODECS.size() * 4)
             .build(
                 new CacheLoader<CacheKey, TypeCodec<?>>() {
                     public TypeCodec<?> load(CacheKey cacheKey) {
@@ -267,7 +290,7 @@ public final class CodecRegistry {
     }
 
     public CodecRegistry(LoadingCache<CacheKey, TypeCodec<?>> cache) {
-        this.codecs = new CopyOnWriteArrayList<TypeCodec<?>>(DEFAULT_CODECS);
+        this.codecs = new CopyOnWriteArrayList<TypeCodec<?>>(PRIMITIVE_CODECS);
         this.cache = cache;
     }
 
@@ -278,25 +301,7 @@ public final class CodecRegistry {
      * @return this CodecRegistry (for method chaining).
      */
     public CodecRegistry register(TypeCodec<?> codec) {
-        return register(codec, false);
-    }
-
-    /**
-     * Register the given codec with this registry.
-     *
-     * @param codec The codec to add to the registry.
-     * @param includeDerivedCollectionCodecs If {@code true}, register not only the given codec
-     * but also collection codecs whose element types are handled by the given codec, i.e.:
-     * <ul>
-     *   <li>lists of the codec's type;</li>
-     *   <li>sets of the codec's type;</li>
-     *   <li>maps of a primitive type to the codec's type, or of the codec's type to a primitive
-     *   type;</li>
-     * </ul>
-     * @return this CodecRegistry (for method chaining).
-     */
-    public CodecRegistry register(TypeCodec<?> codec, boolean includeDerivedCollectionCodecs) {
-        return register(Collections.singleton(codec), includeDerivedCollectionCodecs);
+        return register(Collections.singleton(codec));
     }
 
     /**
@@ -306,7 +311,7 @@ public final class CodecRegistry {
      * @return this Builder (for method chaining).
      */
     public CodecRegistry register(TypeCodec<?>... codecs) {
-        return register(Arrays.asList(codecs), false);
+        return register(Arrays.asList(codecs));
     }
 
     /**
@@ -316,40 +321,9 @@ public final class CodecRegistry {
      * @return this Builder (for method chaining).
      */
     public CodecRegistry register(Iterable<? extends TypeCodec<?>> codecs) {
-        return register(codecs, false);
-    }
-
-    /**
-     * Register the given codecs with this registry.
-     *
-     * @param codecs The codecs to add to the registry.
-     * @param includeDerivedCollectionCodecs If {@code true}, register not only the given codecs
-     * but also collection codecs whose element types are handled by the given codecs, i.e. for
-     * each codec:
-     * <ul>
-     *   <li>lists of the codec's type;</li>
-     *   <li>sets of the codec's type;</li>
-     *   <li>maps of a primitive type to the codec's type, or of the codec's type to a primitive
-     *   type;</li>
-     * </ul>
-     * @return this Builder (for method chaining).
-     */
-    public CodecRegistry register(Iterable<? extends TypeCodec<?>> codecs, boolean includeDerivedCollectionCodecs) {
         for (TypeCodec<?> codec : codecs) {
             // add this codec to the beginning of the list so that it gets higher priority
             this.codecs.add(codec);
-            if(includeDerivedCollectionCodecs){
-                // list and set codecs of the given type
-                this.codecs.add(new ListCodec(codec));
-                this.codecs.add(new SetCodec(codec));
-                // a map which keys and values are of the same given type
-                this.codecs.add(new MapCodec(codec, codec));
-                // map codecs for combinations of the given type with all primitive types
-                for (TypeCodec<?> primitiveCodec : PRIMITIVE_CODECS) {
-                    this.codecs.add(new MapCodec(primitiveCodec, codec));
-                    this.codecs.add(new MapCodec(codec, primitiveCodec));
-                }
-            }
         }
         return this;
     }
@@ -484,10 +458,13 @@ public final class CodecRegistry {
     private <T> TypeCodec<T> lookupCodec(DataType cqlType, TypeToken<T> javaType) {
         checkNotNull(cqlType, "Parameter cqlType cannot be null");
         if(logger.isTraceEnabled())
-            logger.trace("Looking up codec for {} <-> {}", cqlType, javaType);
+            logger.trace("Querying cache for codec [{} <-> {}]", cqlType, javaType);
         CacheKey cacheKey = new CacheKey(cqlType, javaType);
         try {
-            return (TypeCodec<T>)cache.get(cacheKey);
+            TypeCodec<?> codec = cache.get(cacheKey);
+            if(logger.isTraceEnabled())
+                logger.trace("Returning cached codec [{} <-> {}]", cqlType, javaType);
+            return (TypeCodec<T>)codec;
         } catch (UncheckedExecutionException e) {
             if(e.getCause() instanceof CodecNotFoundException) {
                 throw (CodecNotFoundException) e.getCause();
