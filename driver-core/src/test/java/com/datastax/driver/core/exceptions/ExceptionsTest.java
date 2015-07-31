@@ -403,14 +403,14 @@ public class ExceptionsTest {
     @Test(groups = "unit")
     public void should_create_proper_unavailable_exception() {
         UnavailableException e = new UnavailableException(address1, LOCAL_QUORUM, 3, 2);
-        assertThat(e.getMessage()).isEqualTo("Not enough replica available for query at consistency LOCAL_QUORUM (3 required but only 2 alive)");
+        assertThat(e.getMessage()).isEqualTo("Not enough replicas available for query at consistency LOCAL_QUORUM (3 required but only 2 alive)");
         assertThat(e.getConsistencyLevel()).isEqualTo(LOCAL_QUORUM);
         assertThat(e.getAliveReplicas()).isEqualTo(2);
         assertThat(e.getRequiredReplicas()).isEqualTo(3);
         assertThat(e.getAddress()).isEqualTo(address1);
         assertThat(e.getHost()).isEqualTo(address1.getAddress());
         e = e.copy(address2);
-        assertThat(e.getMessage()).isEqualTo("Not enough replica available for query at consistency LOCAL_QUORUM (3 required but only 2 alive)");
+        assertThat(e.getMessage()).isEqualTo("Not enough replicas available for query at consistency LOCAL_QUORUM (3 required but only 2 alive)");
         assertThat(e.getConsistencyLevel()).isEqualTo(LOCAL_QUORUM);
         assertThat(e.getAliveReplicas()).isEqualTo(2);
         assertThat(e.getRequiredReplicas()).isEqualTo(3);

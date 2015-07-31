@@ -42,7 +42,7 @@ public class UnavailableException extends QueryExecutionException implements Coo
     }
 
     public UnavailableException(InetSocketAddress address, ConsistencyLevel consistency, int required, int alive) {
-        super(String.format("Not enough replica available for query at consistency %s (%d required but only %d alive)", consistency, required, alive));
+        super(String.format("Not enough replicas available for query at consistency %s (%d required but only %d alive)", consistency, required, alive));
         this.address = address;
         this.consistency = consistency;
         this.required = required;

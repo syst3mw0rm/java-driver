@@ -67,7 +67,7 @@ public class ExceptionsScassandraTest {
             query();
             fail("expected an UnavailableException");
         } catch (UnavailableException e) {
-            assertThat(e.getMessage()).isEqualTo("Not enough replica available for query at consistency ONE (1 required but only 0 alive)");
+            assertThat(e.getMessage()).isEqualTo("Not enough replicas available for query at consistency ONE (1 required but only 0 alive)");
             assertThat(e.getConsistencyLevel()).isEqualTo(ONE);
             assertThat(e.getAliveReplicas()).isEqualTo(0);
             assertThat(e.getRequiredReplicas()).isEqualTo(1);
