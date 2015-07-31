@@ -263,7 +263,7 @@ public final class CodecRegistry {
 
     /**
      * The list of all known codecs.
-     * This list is initialized with the built-in primitivecodecs;
+     * This list is initialized with the built-in codecs;
      * User-defined codecs are appended to the list.
      */
     private final CopyOnWriteArrayList<TypeCodec<?>> codecs;
@@ -281,10 +281,10 @@ public final class CodecRegistry {
         this.codecs = new CopyOnWriteArrayList<TypeCodec<?>>(PRIMITIVE_CODECS);
         this.cache = CacheBuilder.newBuilder()
             // 19 primitive codecs + collections thereof = 19*3 + 19*19 = 418 codecs,
-            // so let' start with roughly 1/4 of that
+            // so let's start with roughly 1/4 of that
             .initialCapacity(100)
             .weigher(new TypeCodecWeigher())
-            // a cache with all 418 default codecs weighs 399 (19*2 + 19*19),
+            // a cache with all 418 "basic" codecs weighs 399 (19*2 + 19*19),
             // so let's cap at roughly 2.5x this size
             .maximumWeight(1000)
             .concurrencyLevel(Runtime.getRuntime().availableProcessors() * 4)
