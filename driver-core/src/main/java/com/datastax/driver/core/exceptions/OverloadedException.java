@@ -45,19 +45,17 @@ public class OverloadedException extends DriverInternalError implements Coordina
     }
 
     /**
-     * The host that that reported itself being overloaded.
-     *
-     * @return The host that reported itself being overloaded.
+     * {@inheritDoc}
      */
+    @Override
     public InetAddress getHost() {
         return address.getAddress();
     }
 
     /**
-     * The full address of the host that reported itself being overloaded.
-     *
-     * @return The full address of the host that reported itself being overloaded.
+     * {@inheritDoc}
      */
+    @Override
     public InetSocketAddress getAddress() {
         return address;
     }

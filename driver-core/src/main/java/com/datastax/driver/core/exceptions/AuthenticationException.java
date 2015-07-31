@@ -38,21 +38,17 @@ public class AuthenticationException extends DriverException implements Coordina
     }
 
     /**
-     * The host for which the authentication failed.
-     * <p>
-     * This is a shortcut for {@code getAddress().getAddress()}.
-     *
-     * @return the host for which the authentication failed.
+     * {@inheritDoc}
      */
+    @Override
     public InetAddress getHost() {
         return address.getAddress();
     }
 
     /**
-     * The full address of the host for which the authentication failed.
-     *
-     * @return the host for which the authentication failed.
+     * {@inheritDoc}
      */
+    @Override
     public InetSocketAddress getAddress() {
         return address;
     }

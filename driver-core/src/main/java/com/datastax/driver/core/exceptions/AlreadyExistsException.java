@@ -54,11 +54,17 @@ public class AlreadyExistsException extends QueryValidationException implements 
             return String.format("Table %s.%s already exists", keyspace, table);
     }
 
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public InetAddress getHost() {
         return address.getAddress();
     }
 
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public InetSocketAddress getAddress() {
         return address;

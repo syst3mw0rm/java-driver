@@ -104,6 +104,7 @@ public abstract class QueryTimeoutException extends QueryExecutionException impl
      *
      * @return The coordinator host that caused this exception to be thrown, or {@code null} if this exception has been generated driver-side.
      */
+    @Override
     public InetAddress getHost() {
         return address.getAddress();
     }
@@ -115,6 +116,7 @@ public abstract class QueryTimeoutException extends QueryExecutionException impl
      * @return the full address of the coordinator host that caused this exception to be thrown,
      * or {@code null} if this exception has been generated driver-side.
      */
+    @Override
     public InetSocketAddress getAddress() {
         return address;
     }

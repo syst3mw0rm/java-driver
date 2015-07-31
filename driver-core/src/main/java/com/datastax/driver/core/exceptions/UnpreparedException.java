@@ -45,19 +45,17 @@ public class UnpreparedException extends DriverInternalError implements Coordina
     }
 
     /**
-     * The host that replied with an UNPREPARED error code.
-     *
-     * @return The host that replied with an UNPREPARED error code.
+     * {@inheritDoc}
      */
+    @Override
     public InetAddress getHost() {
         return address.getAddress();
     }
 
     /**
-     * The full address of the host that replied with an UNPREPARED error code.
-     *
-     * @return The full address of the host that replied with an UNPREPARED error code.
+     * {@inheritDoc}
      */
+    @Override
     public InetSocketAddress getAddress() {
         return address;
     }

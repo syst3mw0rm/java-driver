@@ -46,20 +46,17 @@ public class SyntaxError extends QueryValidationException implements Coordinator
     }
 
     /**
-     * The coordinator host that caused this exception to be thrown.
-     *
-     * @return The coordinator host that caused this exception to be thrown, or {@code null} if this exception has been generated driver-side.
+     * {@inheritDoc}
      */
+    @Override
     public InetAddress getHost() {
         return address.getAddress();
     }
 
     /**
-     * The full address of the host that caused this exception to be thrown.
-     *
-     * @return the full address of the host that caused this exception to be thrown,
-     * or {@code null} if this exception has been generated driver-side.
+     * {@inheritDoc}
      */
+    @Override
     public InetSocketAddress getAddress() {
         return address;
     }

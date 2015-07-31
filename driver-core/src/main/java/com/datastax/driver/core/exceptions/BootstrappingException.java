@@ -45,19 +45,17 @@ public class BootstrappingException extends DriverInternalError implements Coord
     }
 
     /**
-     * The host that was bootstrapping.
-     *
-     * @return The host that was bootstrapping.
+     * {@inheritDoc}
      */
+    @Override
     public InetAddress getHost() {
         return address.getAddress();
     }
 
     /**
-     * The full address of the host that was bootstrapping.
-     *
-     * @return The full address of the host that was bootstrapping.
+     * {@inheritDoc}
      */
+    @Override
     public InetSocketAddress getAddress() {
         return address;
     }
