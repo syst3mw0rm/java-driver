@@ -204,43 +204,51 @@ public final class CodecRegistry {
     /**
      * A complexity-based weigher.
      * Weights are computed according to the CQL type:
-     * - Primtive types weigh 0;
-     * - Collections weigh the total weight of their inner types;
-     * - Collections, UDTs and tuples weigh 1 + the total weight of their inner types;
-     * - Custom (non-CQL) types weigh 2.
+     * <ol>
+     * <li>Primtive types weigh 0;
+     * <li>Collections weigh the total weight of their inner types + the weight of their level of deepness;
+     * <li>UDTs and tuples weigh the total weight of their inner types + the weight of their level of deepness, but cannot weigh less than 1;
+     * <li>Custom (non-CQL) types weigh 1.
+     * </ol>
+     * A consequence of this algorithm is that primitive types and all "shallow" collections thereof
+     * are never evicted.
      */
     private static class TypeCodecWeigher implements Weigher<CacheKey, TypeCodec<?>> {
 
         @Override
         public int weigh(CacheKey key, TypeCodec<?> value) {
-            return weigh(key.cqlType);
+            return weigh(key.cqlType, 0);
         }
 
-        private static int weigh(DataType cqlType) {
+        private static int weigh(DataType cqlType, int level) {
             switch (cqlType.getName()) {
                 default:
                     return 0;
                 case LIST:
                 case SET:
-                    return weigh(cqlType.getTypeArguments().get(0));
-                case MAP:
-                    return weigh(cqlType.getTypeArguments().get(0)) + weigh(cqlType.getTypeArguments().get(1));
-                case UDT: {
-                    int weight = 1;
-                    for (UserType.Field field : ((UserType)cqlType)) {
-                        weight += weigh(field.getType());
+                case MAP: {
+                    int weight = level;
+                    for (DataType eltType : cqlType.getTypeArguments()) {
+                        weight += weigh(eltType, level + 1);
                     }
                     return weight;
+                }
+                case UDT: {
+                    int weight = level;
+                    for (UserType.Field field : ((UserType)cqlType)) {
+                        weight += weigh(field.getType(), level + 1);
+                    }
+                    return weight == 0 ? 1 : weight;
                 }
                 case TUPLE: {
-                    int weight = 1;
+                    int weight = level;
                     for (DataType componentType : ((TupleType)cqlType).getComponentTypes()) {
-                        weight += weigh(componentType);
+                        weight += weigh(componentType, level + 1);
                     }
-                    return weight;
+                    return weight == 0 ? 1 : weight;
                 }
                 case CUSTOM:
-                    return 2;
+                    return 1;
             }
         }
     }
