@@ -82,8 +82,8 @@ class Responses {
 
         public DriverException asException(InetSocketAddress host) {
             switch (code) {
-                case SERVER_ERROR:     return new DriverInternalError(String.format("An unexpected error occurred server side on %s: %s", host, message));
-                case PROTOCOL_ERROR:   return new DriverInternalError("An unexpected protocol error occurred. This is a bug in this library, please report: " + message);
+                case SERVER_ERROR:     return new ServerError(host, message);
+                case PROTOCOL_ERROR:   return new ProtocolError(host, message);
                 case BAD_CREDENTIALS:  return new AuthenticationException(host, message);
                 case UNAVAILABLE:      return ((UnavailableException)infos).copy(host); // We copy to have a nice stack trace
                 case OVERLOADED:       return new OverloadedException(host, message);
